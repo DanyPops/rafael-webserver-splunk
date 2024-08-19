@@ -1,0 +1,4 @@
+---
+- name: "[INIT] Install Ansible container image"
+  hosts: localhost
+  tasks:

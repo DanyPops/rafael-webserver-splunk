@@ -1,0 +1,15 @@
+- name: "[SSH] Ensure the .ssh directory exists"
+  file:
+    path: /home/{{ ansible_user }}/.ssh
+    state: directory
+    mode: '0700'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+
+- name: "[SSH] Distribute the controller public key to the target"
+  authorized_key:
+    user: "{{ ansible_user }}"
+    state: present
+    key: "{{ item.content | b64decode }}"
+  with_items:
+    - "{{ hostvars['controller-host'].ssh_public_key }}"

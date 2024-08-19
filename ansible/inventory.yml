@@ -1,0 +1,17 @@
+controller:
+  hosts:
+
+webserver:
+  hosts:
+
+analytics:
+  hosts:
+
+active-directory:
+  hosts:
+
+target:
+  children:
+    webserver:
+    analytics:
+    active-directory:

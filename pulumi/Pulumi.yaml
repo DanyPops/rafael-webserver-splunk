@@ -1,0 +1,7 @@
+name: rafael
+runtime: go
+description: Infrastructure for Rafael home task
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: vm-azure-go

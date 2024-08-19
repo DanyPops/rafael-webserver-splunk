@@ -1,0 +1,41 @@
+---
+- name: "[DOCKER] Installing prerequisites"
+  apt:
+    pkgs: 
+      - curl
+      - ca-certificates
+    state: present
+    update_cache: true
+
+- name: "[DOCKER] Adding GPG apt Key"
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: "[DOCKER] Add repository"
+  apt_repository:
+    repo: deb https://download.docker.com/linux/ubuntu focal stable
+    state: present
+
+- name: "[DOCKER] Installing"
+  apt:
+    name: docker-ce
+    state: latest
+    update_cache: true
+
+- name: "[DOCKER] Joining user '{{ ansible_user }}' to 'docker' group"
+  user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: true
+
+- name: "[DOCKER] Installing Python module"
+  pip:
+    name: docker
+
+- name: "[DOCKER] Start Docker service"
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+  become: true

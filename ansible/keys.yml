@@ -1,0 +1,8 @@
+---
+- name: "[KEYS] Generate SSH key pair on controller for distributing to targets"
+  hosts: controller
+  tasks:
+
+- name: "[KEYS] Copy public key to target hosts"
+  hosts: target
+  tasks:

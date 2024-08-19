@@ -1,0 +1,37 @@
+---
+- name: "[NGINX] Creating service user"
+  ansible.builtin.user:
+    name: webserver
+    shell: /bin/false
+
+- name: "[NGINX] Creating directory"
+  ansible.builtin.file:
+    path: /www/data/
+    owner: webserver
+    group: webserver
+    mode: '0644'
+
+- name: "[NGINX] Creating static contect"
+  ansible.builtin.file:
+    src: hello.html
+    dest: /www/data/hello.html
+    owner: webserver
+    group: webserver
+    mode: '0644'
+
+- name: "[NGINX] Pulling container image"
+  community.docker.docker_image:
+    name: nginx
+    source: pull
+
+- name: "[NGINX] Starting container"
+  community.docker.docker_container:
+    user: webserver
+    name: webserver
+    image: nginx:latest
+    state: started
+    restart_policy: always
+    ports:
+      - "8080:80"
+    volumes:
+      - "/www/data/hello.html:/usr/share/nginx/html/index.html"
