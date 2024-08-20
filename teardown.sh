@@ -1,3 +1,2 @@
 #!/bin/bash
-
-pulumi -C ./pulumi down -s dev -y
+pulumi down -s dev -y

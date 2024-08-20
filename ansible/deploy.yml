@@ -1,0 +1,13 @@
+---
+- name: "[WEBSERVER] Deploying NGINX container on webserver hosts"
+  hosts: webserver
+  roles:
+    - docker
+    - nginx
+
+- name: "[ANALYTICS] Deploying Splunk container on analytics hosts"
+  hosts: webserver
+  roles:
+    - docker
+    - splunk
+

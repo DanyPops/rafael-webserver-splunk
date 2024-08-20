@@ -1,10 +1,4 @@
 ---
-# - name: "[NGINX] Creating service user"
-#   ansible.builtin.user:
-#     name: webserver
-#     shell: /bin/false
-#   become: true
-
 - name: "[NGINX] Creating directory"
   ansible.builtin.file:
     state: directory

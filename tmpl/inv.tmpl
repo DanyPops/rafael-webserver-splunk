@@ -1,14 +1,18 @@
 controller:
   hosts:
+    {{ .Controller }}:
 
 webserver:
   hosts:
+    {{ .Webserver }}:
 
 analytics:
   hosts:
+    {{ .Analytics }}
 
 active-directory:
   hosts:
+    {{ .ActiveDirectory }}
 
 target:
   children:
