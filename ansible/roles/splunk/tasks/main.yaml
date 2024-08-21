@@ -1,39 +1,73 @@
 ---
-- name: "[NGINX] Creating directory"
-  ansible.builtin.file:
-    state: directory
-    path: /www/data
-    owner: rafael
-    group: rafael
-    mode: '0644'
-  become: true
-
-- name: "[NGINX] Copy static contect"
-  ansible.builtin.copy:
-    src: index.html
-    dest: /www/data/index.html
-    owner: rafael
-    group: rafael
-    mode: '0644'
-  become: true
-
-- name: "[NGINX] Pulling container image"
+- name: "[SPLUNK] Pulling container image"
   community.docker.docker_image:
-    name: nginx
+    name: splunk/splunk
     source: pull
 
-- name: "[NGINX] Starting container"
+- name: "[SPLUNK] Starting container"
   community.docker.docker_container:
-    # user: webserver
-    name: webserver
-    image: nginx:latest
+    name: analytics
+    image: splunk/splunk:latest
     state: started
     recreate: true
     restart_policy: always
     ports:
-      - "80:80"
-    mounts:
-      - type: "bind"
-        read_only: true
-        source: "/www/data/index.html"
-        target: "/usr/share/nginx/html/index.html"
+      - "8000:8000"
+      - "8088:8088"
+      - "8089:8089"
+    env:
+      SPLUNK_START_ARGS: "--accept-license"
+      SPLUNK_PASSWORD: "{{ splunk_password }}"
+  no_log: true
+
+- name: "[SPLUNK] Waiting for API to respond"
+  uri:
+    url: "https://{{ splunk_service }}:8089"
+    return_content: yes
+    validate_certs: no
+  until: splunk_api_ready.status == 200
+  retries: 72
+  delay: 5
+  register: splunk_api_ready
+
+- name: "[SPLUNK] Authenticate"
+  uri:
+    url: "https://{{ splunk_service }}:8089/services/auth/login"
+    method: POST
+    user: admin
+    password: "{{ splunk_password }}"
+    body_format: form-urlencoded
+    body:
+      username: admin
+      password: "{{ splunk_password }}"
+      output_mode: json
+    return_content: yes
+    validate_certs: no
+    status_code:
+      - 200
+  register: splunk_auth
+  no_log: true
+
+- name: "[SPLUNK] Create HEC input token for webserver"
+  uri:
+    url: "https://{{ splunk_service }}:8089/services/data/inputs/http"
+    method: POST
+    headers:
+      Authorization: Splunk {{ splunk_auth.json.sessionKey }}
+    body_format: form-urlencoded
+    body:
+      name: webserver
+      index: main
+      disabled: false
+      output_mode: json
+    return_content: yes
+    validate_certs: no
+    status_code:
+      - 201
+  register: splunk_create_hec
+  no_log: true
+
+- name: "[SPLUNK] Save HEC Token"
+  set_fact:
+    splunk_hec_token: "{{ splunk_create_hec.json.entry[0].content.token }}"
+  no_log: true

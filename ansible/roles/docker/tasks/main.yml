@@ -5,6 +5,7 @@
       - curl
       - ca-certificates
       - python3-docker
+      - python3-lxml
     state: present
     update_cache: true
   become: true

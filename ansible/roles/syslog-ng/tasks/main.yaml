@@ -1,0 +1,38 @@
+---
+- name: "[SYSLOG-NG] Creating directory"
+  ansible.builtin.file:
+    state: directory
+    path: /syslog-ng
+    owner: rafael
+    group: rafael
+    mode: '0644'
+  become: true
+
+- name: "[SYSLOG-NG] Generate configuration"
+  ansible.builtin.template:
+    src: syslog-ng.conf.j2 
+    dest: /syslog-ng/syslog-ng.conf
+    owner: rafael
+    group: rafael
+    mode: '0644'
+  become: true
+
+
+- name: "[SYSLOG-NG] Pulling container image"
+  community.docker.docker_image:
+    name: linuxserver/syslog-ng
+    source: pull
+
+- name: "[SYSLOG-NG] Starting container"
+  community.docker.docker_container:
+    name: syslog
+    image: linuxserver/syslog-ng:latest
+    state: started
+    recreate: true
+    restart_policy: always
+    ports:
+      - "514:5514/udp"
+    mounts:
+      - type: "bind"
+        source: "/syslog-ng/syslog-ng.conf"
+        target: "/config/syslog-ng.conf"

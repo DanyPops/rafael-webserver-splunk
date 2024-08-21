@@ -1,13 +1,15 @@
 ---
-- name: "[WEBSERVER] Deploying NGINX container on webserver hosts"
-  hosts: webserver
-  roles:
-    - docker
-    - nginx
+# - name: "[WINDOWS] Install Active Directory and Certificate Services"
+#   hosts: windows
+#   roles:
+#     - active-directory
+    # - certificate-services
 
-- name: "[ANALYTICS] Deploying Splunk container on analytics hosts"
-  hosts: webserver
+- name: "[LINUX] Deploying services stack"
+  hosts: linux
   roles:
+    - unattended-upgrade
     - docker
     - splunk
-
+    - syslog-ng
+    - nginx

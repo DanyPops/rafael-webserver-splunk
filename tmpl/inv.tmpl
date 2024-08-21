@@ -1,21 +1,7 @@
-controller:
+linux:
   hosts:
-    {{ .Controller }}:
+    {{ .Linux }}
 
-webserver:
+windows:
   hosts:
-    {{ .Webserver }}:
-
-analytics:
-  hosts:
-    {{ .Analytics }}
-
-active-directory:
-  hosts:
-    {{ .ActiveDirectory }}
-
-target:
-  children:
-    webserver:
-    analytics:
-    active-directory:
+    {{ .Windows }}

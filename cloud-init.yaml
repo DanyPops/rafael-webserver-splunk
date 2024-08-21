@@ -1,4 +1,7 @@
 #cloud-config
+groups:
+  - docker
+
 packages:
   - python3
   - python3-pip

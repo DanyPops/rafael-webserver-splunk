@@ -1,9 +1,0 @@
-encryptionsalt: v1:htMPU8hi2nU=:v1:VgyC9ne6IO/D3h43:5q8S4AcLXrMYWEi8PPjFHKy9S1sfFw==
-config:
-  azure-native:location: IsraelCentral
-  rafael:namePrefix: rafael
-  rafael:adminUsername: rafael
-  rafael:osImage: Debian:debian-11:11:latest
-  rafael:servicePort: "80"
-  rafael:vmName: webserver
-  rafael:vmSize: Standard_A1_v2

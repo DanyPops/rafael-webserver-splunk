@@ -1,0 +1,28 @@
+@version: 4.2
+
+# Source: Listen for logs from NGINX on UDP port 514
+source s_nginx {
+    network(
+        transport("udp")
+        port(5514)
+    );
+};
+
+# Destination: Send logs to Splunk via HEC
+destination d_splunk {
+    http(
+        url("https://{{ splunk_service }}:8088/services/collector/event")
+        method("post")
+        headers("Authorization: Splunk {{ splunk_hec_token }}")
+        body("${MSG}")
+        tls(
+            peer-verify(no) 
+        )
+    );
+};
+
+# Log path
+log {
+    source(s_nginx);
+    destination(d_splunk);
+};

@@ -1,0 +1,21 @@
+---
+- name: "[CS] Install Certificate Services feature"
+  win_feature:
+    name: ADCS-Cert-Authority
+    state: present
+
+- name: "[CS] Configure Certificate Services"
+  win_shell: |
+    Install-AdcsCertificationAuthority -CAType StandaloneRootCA -CACommonName "RafaelCA" -KeyLength 2048 -HashAlgorithmName SHA256
+
+- name: "[CS] Create a self-signed certificate"
+  win_pfx_certificate:
+    path: C:\Certs\rafael-linux.pfx
+    subject: "CN={{ linux_public_fqdn }}"
+    password: 
+
+- name: "[CS] Copy certificate"
+  win_copy:
+    src: C:\Certs\rafael-linux.pfx
+    dest: /path/to/local/directory/
+  delegate_to: localhost

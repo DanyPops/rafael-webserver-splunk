@@ -5,7 +5,25 @@
 #     shell: /bin/false
 #   become: true
 
-- name: "[NGINX] Creating directory"
+- name: "[NGINX] Creating conf directory"
+  ansible.builtin.file:
+    state: directory
+    path: /www/conf
+    owner: rafael
+    group: rafael
+    mode: '0644'
+  become: true
+
+- name: "[NGINX] Generate configuration"
+  ansible.builtin.template:
+    src: nginx.conf.j2 
+    dest: /www/conf/nginx.conf
+    owner: rafael
+    group: rafael
+    mode: '0644'
+  become: true
+
+- name: "[NGINX] Creating data directory"
   ansible.builtin.file:
     state: directory
     path: /www/data
@@ -40,6 +58,8 @@
       - "80:80"
     mounts:
       - type: "bind"
-        read_only: true
         source: "/www/data/index.html"
         target: "/usr/share/nginx/html/index.html"
+      - type: "bind"
+        source: "/www/conf/nginx.conf"
+        target: "/etc/nginx/nginx.conf"

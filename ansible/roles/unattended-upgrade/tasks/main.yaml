@@ -1,0 +1,30 @@
+- name: Disable timers for unattended upgrade, so that none will be triggered by the `date -s` call.
+  command: systemctl disable --now {{item}}
+  with_items:
+    - 'apt-daily.timer'
+    - 'apt-daily-upgrade.timer'
+  become: true
+
+- name: Reload systemctl daemon to apply the new changes
+  command: systemctl daemon-reload
+  become: true
+
+- name: Wait for any possibly running unattended upgrade to finish
+  command: systemd-run --property="After=apt-daily.service apt-daily-upgrade.service" --wait /bin/true
+  become: true
+
+- name: Wait for automatic system updates
+  shell: "while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 1; done;"
+  become: true
+
+- name: Purge unattended upgrades
+  apt:
+    package: unattended-upgrades
+    purge: true
+    state: "absent"
+    update_cache: true
+  become: true
+  register: apt_result
+  retries: 30
+  delay: 3
+  until: apt_result is success
