@@ -42,7 +42,7 @@
 
     $resp.Certificate | Install-IssuedCertificate
 
-    $password = ConvertTo-SecureString -String "{{ pfx_password }}" -Force -AsPlainText
+    $password = ConvertTo-SecureString -String '{{ pfx_password }}' -Force -AsPlainText
 
     Export-PfxCertificate `
       -Cert "Cert:\CurrentUser\My\$($resp.Certificate.Thumbprint)" `

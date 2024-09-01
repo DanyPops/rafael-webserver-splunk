@@ -1,14 +1,9 @@
 package main
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/pulumi/pulumi-azure-native-sdk/compute/v2"
@@ -18,95 +13,20 @@ import (
 	"github.com/pulumi/pulumi-command/sdk/go/command/remote"
 	"github.com/pulumi/pulumi-random/sdk/v4/go/random"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
-	"golang.org/x/crypto/ssh"
 )
-
-func MakeSSHKeyPair(publicKeyPath, privateKeyPath string) error {
-	// Check if Key exists
-	_, err := os.Stat(privateKeyPath)
-
-	// No error means the key exists, do nothing
-	if err == nil {
-		return nil
-	}
-
-	// If error isn't "doesn't exist" exit
-	if !os.IsNotExist(err) {
-		return err
-	}
-
-	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
-	if err != nil {
-		return err
-	}
-
-	privateKeyFile, err := os.Create(privateKeyPath)
-	defer privateKeyFile.Close()
-	if err != nil {
-		return err
-	}
-
-	privateKeyPEM := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
-	if err := pem.Encode(privateKeyFile, privateKeyPEM); err != nil {
-		return err
-	}
-
-	if err := os.Chmod(privateKeyPath, 0600); err != nil {
-		return err
-	}
-
-	// generate and write public key
-	pub, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(publicKeyPath, ssh.MarshalAuthorizedKey(pub), 0644)
-}
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		// Import configuration settings
-		cfg := config.New(ctx, "")
-		namePrefix, err := cfg.Try("namePrefix")
-		if err != nil {
-			namePrefix = "rafael"
-		}
+    // Config
+    namePrefix := "rafael"
+    adminUsername := "rafael"
+    nginxPort := "80"
+    splunkPort := "8000"
+    sshKeyPath := os.Getenv("HOME") + "/.ssh/az-rafael-host-vm"
+    sshPubKeyPath := sshKeyPath + ".pub"
 
-		// vmSize, err := cfg.Try("vmSize")
-		// if err != nil {
-		// 	vmSize = "Standard_B1ms"
-		// }
-
-		linuxImage, err := cfg.Try("linuxImage")
-		if err != nil {
-			linuxImage = "Debian:debian-11:11:latest"
-		}
-
-		adminUsername, err := cfg.Try("adminUsername")
-		if err != nil {
-			adminUsername = "rafael"
-		}
-
-		if err != nil {
-			return err
-		}
-
-		nginxPort, err := cfg.Try("webserverPort")
-		if err != nil {
-			nginxPort = "80"
-		}
-
-		splunkPort, err := cfg.Try("splunkPort")
-		if err != nil {
-			splunkPort = "8000"
-		}
-
-		sshKeyPath, err := cfg.Try("sshKeyPath")
-		if err != nil {
-			sshKeyPath = os.Getenv("HOME") + "/.ssh/az-rafael-host-vm"
-		}
-		sshPubKeyPath := sshKeyPath + ".pub"
+		linuxVmName := pulumi.String(fmt.Sprintf("%s-linux", namePrefix))
+		windowsVmName := pulumi.String(fmt.Sprintf("%s-windows", namePrefix))
 
 		// Geneate passwords
 		splunkPassword, err := random.NewRandomPassword(ctx, "splunkPassword", &random.RandomPasswordArgs{
@@ -125,7 +45,6 @@ func main() {
 			Length: pulumi.Int(16),
 		})
 		pfxSecret := pulumi.ToSecret(pfxPassword.Result)
-		ctx.Export("pfxPassword", pfxSecret)
 
 		// Cloud-Init is a Linux VM configuration developed by the OpenStack project
 		cloudInit, err := os.ReadFile("./cloud-init.yaml")
@@ -134,7 +53,7 @@ func main() {
 		}
 
 		// Create SSH key pair if doesn't exist
-		if err := MakeSSHKeyPair(sshPubKeyPath, sshKeyPath); err != nil {
+		if err := generateSSHKeyPair(sshPubKeyPath, sshKeyPath); err != nil {
 			return fmt.Errorf("failed to create SSH key pair %s: %v", sshKeyPath, err)
 		}
 
@@ -150,15 +69,6 @@ func main() {
 			return fmt.Errorf("failed to read SSH public key '%s': %v", sshKeyPath, err)
 		}
 		sshPubKey := pulumi.String(string(sshPubKeyBytes))
-
-		linuxImageArgs := strings.Split(linuxImage, ":")
-		linuxImagePublisher := linuxImageArgs[0]
-		linuxImageOffer := linuxImageArgs[1]
-		linuxImageSku := linuxImageArgs[2]
-		linuxImageVersion := linuxImageArgs[3]
-
-		linuxVmName := pulumi.String(fmt.Sprintf("%s-linux", namePrefix))
-		windowsVmName := pulumi.String(fmt.Sprintf("%s-windows", namePrefix))
 
 		// Create a resource group
 		rGroup, err := resources.NewResourceGroup(ctx, fmt.Sprintf("%s-rg", namePrefix), nil)
@@ -307,10 +217,10 @@ func main() {
 					CreateOption: pulumi.String("FromImage"),
 				},
 				ImageReference: &compute.ImageReferenceArgs{
-					Publisher: pulumi.String(linuxImagePublisher),
-					Offer:     pulumi.String(linuxImageOffer),
-					Sku:       pulumi.String(linuxImageSku),
-					Version:   pulumi.String(linuxImageVersion),
+					Publisher: pulumi.String("Debian"),
+					Offer:     pulumi.String("debian-11"),
+					Sku:       pulumi.String("11"),
+					Version:   pulumi.String("latest"),
 				},
 			},
 		})
@@ -344,30 +254,6 @@ func main() {
 		ctx.Export("splunkUrl", linuxAddress.ApplyT(func(addr network.LookupPublicIPAddressResult) (string, error) {
 			return fmt.Sprintf("https://%s:%s", *addr.DnsSettings.Fqdn, splunkPort), nil
 		}).(pulumi.StringOutput))
-
-		// winDomainLabelSuffix, err := random.NewRandomString(ctx, "winDomainLabel", &random.RandomStringArgs{
-		// 	Length:  pulumi.Int(8),
-		// 	Upper:   pulumi.Bool(false),
-		// 	Special: pulumi.Bool(false),
-		// })
-		// if err != nil {
-		// 	return err
-		// }
-
-		// winDomainLabel := winDomainLabelSuffix.Result.ApplyT(func(result string) string {
-		// 	return fmt.Sprintf("%s-%s", namePrefix, result)
-		// }).(pulumi.StringOutput)
-
-		// winPubIp, err := network.NewPublicIPAddress(ctx, "windowsPublicIp", &network.PublicIPAddressArgs{
-		// 	ResourceGroupName:        rGroup.Name,
-		// 	PublicIPAllocationMethod: pulumi.StringPtr("Dynamic"),
-		// 	DnsSettings: network.PublicIPAddressDnsSettingsArgs{
-		// 		DomainNameLabel: winDomainLabel,
-		// 	},
-		// })
-		// if err != nil {
-		// 	return err
-		// }
 
 		winSecurityGroup, err := network.NewNetworkSecurityGroup(ctx, "windowsSecurityGroup", &network.NetworkSecurityGroupArgs{
 			ResourceGroupName: rGroup.Name,
@@ -453,18 +339,6 @@ func main() {
 			return err
 		}
 
-		// winAddress := linuxVm.ID().ApplyT(func(_ pulumi.ID) network.LookupPublicIPAddressResultOutput {
-		// 	return network.LookupPublicIPAddressOutput(ctx, network.LookupPublicIPAddressOutputArgs{
-		// 		ResourceGroupName:   rGroup.Name,
-		// 		PublicIpAddressName: winPubIp.Name,
-		// 	})
-		// })
-
-		// winPubIpAddress := winAddress.ApplyT(func(addr network.LookupPublicIPAddressResult) (string, error) {
-		// 	return *addr.IpAddress, nil
-		// }).(pulumi.StringOutput)
-		// ctx.Export("winIp", winPubIpAddress)
-
 		winInstallSsh, err := compute.NewVirtualMachineExtension(ctx, "windowsOpenSSH", &compute.VirtualMachineExtensionArgs{
 			ResourceGroupName:  rGroup.Name,
 			VmName:             winVm.Name,
@@ -475,25 +349,6 @@ func main() {
 		if err != nil {
 			return err
 		}
-
-    // Distribute public SSH key to Windows Server
-  //   winDistPubSshKey, err := compute.NewVirtualMachineRunCommandByVirtualMachine(ctx, "distributePublicKeyToWindows", &compute.VirtualMachineRunCommandByVirtualMachineArgs{
-  //     ResourceGroupName: rGroup.Name,
-  //     VmName: winVm.Name,
-  //     Location: winVm.Location,
-  //     Source: &compute.VirtualMachineRunCommandScriptSourceArgs{
-  //       Script: pulumi.Sprintf(`powershell -command '$username = '%s'; $homeDirectoryPath = "C:\Users\$username"; New-Item -ItemType Directory -Force "C:\Users\$username\.ssh"; Set-Content -Path "C:\Users\$username\.ssh\authorized_keys" -Value '%s'; $acl = Get-Acl "$homeDirectoryPath"; $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule("$username", "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow"); $acl.SetAccessRule($accessRule); Set-Acl -Path "$homeDirectoryPath" -AclObject "$acl"'`,
-		// 			adminUsername,
-		// 			sshPubKey),
-  //     },
-		// }, pulumi.DependsOn([]pulumi.Resource{
-  //     winInstallSsh,
-		// }))
-		// if err != nil {
-		// 	return err
-		// }
-
-		ctx.Export("privateKey", sshKey)
 		ctx.Export("privateKeyPath", pulumi.String(sshKeyPath))
 
 		// Generate Ansible inventory
