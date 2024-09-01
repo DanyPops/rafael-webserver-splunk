@@ -1,9 +1,9 @@
 ---
-# - name: "[WINDOWS] Install Active Directory and Certificate Services"
-#   hosts: windows
-#   roles:
-#     - active-directory
-    # - certificate-services
+- name: "[WINDOWS] Install Active Directory and Certificate Services"
+  hosts: windows
+  roles:
+    - active-directory
+    - certificate-services
 
 - name: "[LINUX] Deploying services stack"
   hosts: linux

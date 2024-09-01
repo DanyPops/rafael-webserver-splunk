@@ -25,7 +25,7 @@ http {
                                         '"http_user_agent": "$http_user_agent", '
                                         '"http_x_forwarded_for": "$http_x_forwarded_for" } }';
 
-    access_log syslog:server={{ syslog_service }}:514 splunk_json;
+    access_log syslog:server=rafael-linux:514 splunk_json;
 
     sendfile        on;
     #tcp_nopush     on;

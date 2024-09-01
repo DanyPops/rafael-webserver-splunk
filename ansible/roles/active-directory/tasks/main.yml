@@ -6,10 +6,9 @@
 
 - name: "[AD] Promote server to Domain Controller"
   microsoft.ad.domain:
-    safe_mode_password: "{{ ad_safe_mode_password }}"
-    domain_admin_user: "{{ ad_admin_name }}"
-    domain_admin_password: "{{ ad_admin_password }}"
-    register: domain_install
+    dns_domain_name: "ad.rafael.local"
+    safe_mode_password: "{{ ansible_password }}"
+  register: domain_install
 
 - name: "[AD] Reboot host if install requires it"
   ansible.windows.win_reboot:

@@ -5,3 +5,6 @@ linux:
 windows:
   hosts:
     {{ .Windows }}
+  vars:
+    ansible_connection: ssh 
+    ansible_shell_type: cmd

@@ -6,3 +6,4 @@ packages:
   - python3
   - python3-pip
   - ansible
+  - sshpass

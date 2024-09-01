@@ -11,7 +11,7 @@ source s_nginx {
 # Destination: Send logs to Splunk via HEC
 destination d_splunk {
     http(
-        url("https://{{ splunk_service }}:8088/services/collector/event")
+        url("https://rafael-linux:8088/services/collector/event")
         method("post")
         headers("Authorization: Splunk {{ splunk_hec_token }}")
         body("${MSG}")

@@ -73,10 +73,10 @@ func main() {
 			namePrefix = "rafael"
 		}
 
-		vmSize, err := cfg.Try("vmSize")
-		if err != nil {
-			vmSize = "Standard_B1ms"
-		}
+		// vmSize, err := cfg.Try("vmSize")
+		// if err != nil {
+		// 	vmSize = "Standard_B1ms"
+		// }
 
 		linuxImage, err := cfg.Try("linuxImage")
 		if err != nil {
@@ -92,14 +92,14 @@ func main() {
 			return err
 		}
 
-		webserverPort, err := cfg.Try("webserverPort")
+		nginxPort, err := cfg.Try("webserverPort")
 		if err != nil {
-			webserverPort = "80"
+			nginxPort = "80"
 		}
 
-		analyticsPort, err := cfg.Try("analyticsPort")
+		splunkPort, err := cfg.Try("splunkPort")
 		if err != nil {
-			analyticsPort = "8000"
+			splunkPort = "8000"
 		}
 
 		sshKeyPath, err := cfg.Try("sshKeyPath")
@@ -108,20 +108,24 @@ func main() {
 		}
 		sshPubKeyPath := sshKeyPath + ".pub"
 
-    // Geneate passwords
-    splunkPassword, err := random.NewRandomPassword(ctx, "password", &random.RandomPasswordArgs{
-			Length:          pulumi.Int(16),
+		// Geneate passwords
+		splunkPassword, err := random.NewRandomPassword(ctx, "splunkPassword", &random.RandomPasswordArgs{
+			Length: pulumi.Int(16),
 		})
-    splunkSecret := pulumi.ToSecret(splunkPassword.Result)
-    ctx.Export("splunkPassword", splunkSecret)
+		splunkSecret := pulumi.ToSecret(splunkPassword.Result)
+		ctx.Export("splunkPassword", splunkSecret)
 
-  //   wsAdPassword, err := random.NewRandomPassword(ctx, "password", &random.RandomPasswordArgs{
-		// 	Length:          pulumi.Int(16),
-		// 	Special:         pulumi.Bool(true),
-		// 	OverrideSpecial: pulumi.String("!#$%&*()-_=+[]{}<>:?"),
-		// })
-  //   wsAdSecret := pulumi.ToSecret(wsAdPassword.Result)
-  //   ctx.Export("splunkPassword", wsAdSecret)
+		winPassword, err := random.NewRandomPassword(ctx, "windowsPassword", &random.RandomPasswordArgs{
+			Length: pulumi.Int(16),
+		})
+		winSecret := pulumi.ToSecret(winPassword.Result)
+		ctx.Export("windowsPassword", winSecret)
+
+		pfxPassword, err := random.NewRandomPassword(ctx, "pfxdowsPassword", &random.RandomPasswordArgs{
+			Length: pulumi.Int(16),
+		})
+		pfxSecret := pulumi.ToSecret(pfxPassword.Result)
+		ctx.Export("pfxPassword", pfxSecret)
 
 		// Cloud-Init is a Linux VM configuration developed by the OpenStack project
 		cloudInit, err := os.ReadFile("./cloud-init.yaml")
@@ -154,7 +158,7 @@ func main() {
 		linuxImageVersion := linuxImageArgs[3]
 
 		linuxVmName := pulumi.String(fmt.Sprintf("%s-linux", namePrefix))
-		// wsAdVmName := fmt.Sprintf("%s-active-directory", namePrefix)
+		windowsVmName := pulumi.String(fmt.Sprintf("%s-windows", namePrefix))
 
 		// Create a resource group
 		rGroup, err := resources.NewResourceGroup(ctx, fmt.Sprintf("%s-rg", namePrefix), nil)
@@ -179,7 +183,7 @@ func main() {
 					"10.0.0.0/16",
 				}),
 			},
-		})
+		}, pulumi.IgnoreChanges([]string{"subnets"}))
 		if err != nil {
 			return err
 		}
@@ -194,7 +198,7 @@ func main() {
 		}
 
 		// Use a random string to give the VM a unique DNS name
-		domainLabelSuffix, err := random.NewRandomString(ctx, "domain-label", &random.RandomStringArgs{
+		linuxDomainLabelSuffix, err := random.NewRandomString(ctx, "linuxDomainLabel", &random.RandomStringArgs{
 			Length:  pulumi.Int(8),
 			Upper:   pulumi.Bool(false),
 			Special: pulumi.Bool(false),
@@ -203,28 +207,28 @@ func main() {
 			return err
 		}
 
-		domainLabel := domainLabelSuffix.Result.ApplyT(func(result string) string {
+		linuxDomainLabel := linuxDomainLabelSuffix.Result.ApplyT(func(result string) string {
 			return fmt.Sprintf("%s-%s", namePrefix, result)
 		}).(pulumi.StringOutput)
 
 		// Create a public IP address for the Linux VM
-		linuxPubIp, err := network.NewPublicIPAddress(ctx, "linux-public-ip", &network.PublicIPAddressArgs{
+		linuxPubIp, err := network.NewPublicIPAddress(ctx, "linuxPublicIp", &network.PublicIPAddressArgs{
 			ResourceGroupName:        rGroup.Name,
 			PublicIPAllocationMethod: pulumi.StringPtr("Dynamic"),
 			DnsSettings: network.PublicIPAddressDnsSettingsArgs{
-				DomainNameLabel: domainLabel,
+				DomainNameLabel: linuxDomainLabel,
 			},
 		})
 		if err != nil {
 			return err
 		}
 
-		// Create a security group allowing inbound access over ports for SSH, Webserver & Analytics
-		securityGroup, err := network.NewNetworkSecurityGroup(ctx, "security-group", &network.NetworkSecurityGroupArgs{
+		// Create a security group allowing inbound access over ports for SSH, NGINX & Splunk
+		linuxSecurityGroup, err := network.NewNetworkSecurityGroup(ctx, "linuxSecurityGroup", &network.NetworkSecurityGroupArgs{
 			ResourceGroupName: rGroup.Name,
 			SecurityRules: network.SecurityRuleTypeArray{
 				network.SecurityRuleTypeArgs{
-					Name:                     pulumi.StringPtr(fmt.Sprintf("%s-securityrule", namePrefix)),
+					Name:                     pulumi.StringPtr(fmt.Sprintf("%s-linux-securityrule", namePrefix)),
 					Priority:                 pulumi.Int(1000),
 					Direction:                pulumi.String("Inbound"),
 					Access:                   pulumi.String("Allow"),
@@ -233,11 +237,8 @@ func main() {
 					SourceAddressPrefix:      pulumi.StringPtr("*"),
 					DestinationAddressPrefix: pulumi.StringPtr("*"),
 					DestinationPortRanges: pulumi.ToStringArray([]string{
-						// syslogPort,
-						webserverPort,
-						analyticsPort,
-						// analyticsMgmtPort,
-						// analyticsHecPort,
+						nginxPort,
+						splunkPort,
 						"22",
 					}),
 				},
@@ -248,10 +249,10 @@ func main() {
 		}
 
 		// Create a network interface with the virtual network, IP address, and security group
-		linuxNic, err := network.NewNetworkInterface(ctx, "linux-nic", &network.NetworkInterfaceArgs{
+		linuxNic, err := network.NewNetworkInterface(ctx, "linuxNic", &network.NetworkInterfaceArgs{
 			ResourceGroupName: rGroup.Name,
 			NetworkSecurityGroup: &network.NetworkSecurityGroupTypeArgs{
-				Id: securityGroup.ID(),
+				Id: linuxSecurityGroup.ID(),
 			},
 			IpConfigurations: network.NetworkInterfaceIPConfigurationArray{
 				&network.NetworkInterfaceIPConfigurationArgs{
@@ -271,7 +272,7 @@ func main() {
 		}
 
 		// Create the Linux virtual machine
-		linuxVm, err := compute.NewVirtualMachine(ctx, "linux-vm", &compute.VirtualMachineArgs{
+		linuxVm, err := compute.NewVirtualMachine(ctx, "linuxVm", &compute.VirtualMachineArgs{
 			ResourceGroupName: rGroup.Name,
 			NetworkProfile: &compute.NetworkProfileArgs{
 				NetworkInterfaces: compute.NetworkInterfaceReferenceArray{
@@ -282,7 +283,7 @@ func main() {
 				},
 			},
 			HardwareProfile: &compute.HardwareProfileArgs{
-				VmSize: pulumi.String(vmSize),
+				VmSize: pulumi.StringPtr("Standard_B1ms"),
 			},
 			OsProfile: &compute.OSProfileArgs{
 				ComputerName:  linuxVmName,
@@ -317,8 +318,8 @@ func main() {
 			return err
 		}
 
-		// Once the machine is created, fetch its IP address and DNS hostname
-		address := linuxVm.ID().ApplyT(func(_ pulumi.ID) network.LookupPublicIPAddressResultOutput {
+		// Once the machine is created, fetch its IP linuxAddress and DNS hostname
+		linuxAddress := linuxVm.ID().ApplyT(func(_ pulumi.ID) network.LookupPublicIPAddressResultOutput {
 			return network.LookupPublicIPAddressOutput(ctx, network.LookupPublicIPAddressOutputArgs{
 				ResourceGroupName:   rGroup.Name,
 				PublicIpAddressName: linuxPubIp.Name,
@@ -326,85 +327,168 @@ func main() {
 		})
 
 		// Export the VMs hostname, public IP address, HTTP URL, and SSH private key
-		linuxPubIpAddress := address.ApplyT(func(addr network.LookupPublicIPAddressResult) (string, error) {
+		linuxPubIpAddress := linuxAddress.ApplyT(func(addr network.LookupPublicIPAddressResult) (string, error) {
 			return *addr.IpAddress, nil
 		}).(pulumi.StringOutput)
 		ctx.Export("linuxIp", linuxPubIpAddress)
 
-		linuxPubHostname := address.ApplyT(func(addr network.LookupPublicIPAddressResult) (string, error) {
+		linuxPubFqdn := linuxAddress.ApplyT(func(addr network.LookupPublicIPAddressResult) (string, error) {
 			return *addr.DnsSettings.Fqdn, nil
 		}).(pulumi.StringOutput)
-		ctx.Export("linuxHostname", linuxPubHostname)
+		ctx.Export("linuxFqdn", linuxPubFqdn)
 
-		ctx.Export("webserverUrl", address.ApplyT(func(addr network.LookupPublicIPAddressResult) (string, error) {
-			return fmt.Sprintf("http://%s:%s", *addr.DnsSettings.Fqdn, webserverPort), nil
+		ctx.Export("webserverUrl", linuxAddress.ApplyT(func(addr network.LookupPublicIPAddressResult) (string, error) {
+			return fmt.Sprintf("http://%s:%s", *addr.DnsSettings.Fqdn, nginxPort), nil
 		}).(pulumi.StringOutput))
 
-		ctx.Export("analyticsUrl", address.ApplyT(func(addr network.LookupPublicIPAddressResult) (string, error) {
-			return fmt.Sprintf("http://%s:%s", *addr.DnsSettings.Fqdn, analyticsPort), nil
+		ctx.Export("splunkUrl", linuxAddress.ApplyT(func(addr network.LookupPublicIPAddressResult) (string, error) {
+			return fmt.Sprintf("https://%s:%s", *addr.DnsSettings.Fqdn, splunkPort), nil
 		}).(pulumi.StringOutput))
 
-		// Create a public IP for Windows VM
-		// windowsPublicIp, err := network.NewPublicIPAddress(ctx, "windowsPublicIp", &network.PublicIPAddressArgs{
-		// 	ResourceGroupName:        rGroup.Name,
-		// 	PublicIPAllocationMethod: pulumi.String("Dynamic"),
+		// winDomainLabelSuffix, err := random.NewRandomString(ctx, "winDomainLabel", &random.RandomStringArgs{
+		// 	Length:  pulumi.Int(8),
+		// 	Upper:   pulumi.Bool(false),
+		// 	Special: pulumi.Bool(false),
 		// })
 		// if err != nil {
 		// 	return err
 		// }
+
+		// winDomainLabel := winDomainLabelSuffix.Result.ApplyT(func(result string) string {
+		// 	return fmt.Sprintf("%s-%s", namePrefix, result)
+		// }).(pulumi.StringOutput)
+
+		// winPubIp, err := network.NewPublicIPAddress(ctx, "windowsPublicIp", &network.PublicIPAddressArgs{
+		// 	ResourceGroupName:        rGroup.Name,
+		// 	PublicIPAllocationMethod: pulumi.StringPtr("Dynamic"),
+		// 	DnsSettings: network.PublicIPAddressDnsSettingsArgs{
+		// 		DomainNameLabel: winDomainLabel,
+		// 	},
+		// })
+		// if err != nil {
+		// 	return err
+		// }
+
+		winSecurityGroup, err := network.NewNetworkSecurityGroup(ctx, "windowsSecurityGroup", &network.NetworkSecurityGroupArgs{
+			ResourceGroupName: rGroup.Name,
+			SecurityRules: network.SecurityRuleTypeArray{
+				network.SecurityRuleTypeArgs{
+					Name:                     pulumi.StringPtr(fmt.Sprintf("%s-windows-securityrule", namePrefix)),
+					Priority:                 pulumi.Int(1000),
+					Direction:                pulumi.String("Inbound"),
+					Access:                   pulumi.String("Allow"),
+					Protocol:                 pulumi.String("Tcp"),
+					SourcePortRange:          pulumi.StringPtr("*"),
+					SourceAddressPrefix:      pulumi.StringPtr("*"),
+					DestinationAddressPrefix: pulumi.StringPtr("*"),
+					DestinationPortRanges: pulumi.ToStringArray([]string{
+						"22",
+					}),
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
 
 		// Create a network interface for Windows VM
-		// windowsNic, err := network.NewNetworkInterface(ctx, "windowsNic", &network.NetworkInterfaceArgs{
-		// 	ResourceGroupName: rGroup.Name,
-		// 	IpConfigurations: network.NetworkInterfaceIPConfigurationArray{
-		// 		&network.NetworkInterfaceIPConfigurationArgs{
-		// 			Name:                      pulumi.String("ipconfig1"),
-		// 			Subnet:                    &network.SubnetTypeArgs{
-		//           Id: subnet.ID(),
-		//         },
-		// 			PrivateIPAllocationMethod: pulumi.String("Dynamic"),
-		// 			// PublicIPAddress:           &network.PublicIPAddressTypeArgs{
-		//    //        Id: windowsPublicIp.ID()},
-		// 		},
-		// 	},
+		windowsNic, err := network.NewNetworkInterface(ctx, "windowsNic", &network.NetworkInterfaceArgs{
+			ResourceGroupName: rGroup.Name,
+			NetworkSecurityGroup: &network.NetworkSecurityGroupTypeArgs{
+				Id: winSecurityGroup.ID(),
+			},
+			IpConfigurations: network.NetworkInterfaceIPConfigurationArray{
+				&network.NetworkInterfaceIPConfigurationArgs{
+					Name: pulumi.String("ipconfig1"),
+					Subnet: &network.SubnetTypeArgs{
+						Id: subnet.ID(),
+					},
+					PrivateIPAllocationMethod: pulumi.String("Dynamic"),
+					// PublicIPAddress: &network.PublicIPAddressTypeArgs{
+					// 	Id: winPubIp.ID(),
+					// },
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create Windows VM
+		winVm, err := compute.NewVirtualMachine(ctx, "windowsVM", &compute.VirtualMachineArgs{
+			ResourceGroupName: rGroup.Name,
+			NetworkProfile: &compute.NetworkProfileArgs{
+				NetworkInterfaces: compute.NetworkInterfaceReferenceArray{
+					&compute.NetworkInterfaceReferenceArgs{
+						Id: windowsNic.ID(),
+					},
+				},
+			},
+			HardwareProfile: &compute.HardwareProfileArgs{
+				VmSize: pulumi.StringPtr("Standard_B1ms"),
+			},
+			OsProfile: &compute.OSProfileArgs{
+				ComputerName:  windowsVmName,
+				AdminUsername: pulumi.String(adminUsername),
+				AdminPassword: winSecret.ApplyT(func(s string) *string {
+					return &s
+				}).(pulumi.StringPtrInput),
+				WindowsConfiguration: &compute.WindowsConfigurationArgs{
+					EnableAutomaticUpdates: pulumi.Bool(true),
+				},
+			},
+			StorageProfile: &compute.StorageProfileArgs{
+				ImageReference: &compute.ImageReferenceArgs{
+					Publisher: pulumi.String("MicrosoftWindowsServer"),
+					Offer:     pulumi.String("WindowsServer"),
+					Sku:       pulumi.String("2022-datacenter-g2"),
+					Version:   pulumi.String("latest"),
+				},
+				OsDisk: &compute.OSDiskArgs{
+					CreateOption: pulumi.String("FromImage"),
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// winAddress := linuxVm.ID().ApplyT(func(_ pulumi.ID) network.LookupPublicIPAddressResultOutput {
+		// 	return network.LookupPublicIPAddressOutput(ctx, network.LookupPublicIPAddressOutputArgs{
+		// 		ResourceGroupName:   rGroup.Name,
+		// 		PublicIpAddressName: winPubIp.Name,
+		// 	})
 		// })
-		// if err != nil {
-		// 	return err
-		// }
-		//
-		// // Create Windows VM
-		// _, err = compute.NewVirtualMachine(ctx, "windowsVM", &compute.VirtualMachineArgs{
-		// 	ResourceGroupName: rGroup.Name,
-		// 	NetworkProfile: &compute.NetworkProfileArgs{
-		// 		NetworkInterfaces: compute.NetworkInterfaceReferenceArray{
-		// 			&compute.NetworkInterfaceReferenceArgs{
-		// 				Id: windowsNic.ID(),
-		// 			},
-		// 		},
-		// 	},
-		// 	HardwareProfile: &compute.HardwareProfileArgs{
-		// 		VmSize: pulumi.String(vmSize),
-		// 	},
-		// 	OsProfile: &compute.OSProfileArgs{
-		// 		ComputerName:  pulumi.String(wsAdVmName),
-		// 		AdminUsername: pulumi.String(adminUsername),
-		// 		AdminPassword: pulumi.String(adminPassword), // Replace with a secure password
-		// 		WindowsConfiguration: &compute.WindowsConfigurationArgs{
-		// 			EnableAutomaticUpdates: pulumi.Bool(true),
-		// 		},
-		// 	},
-		// 	StorageProfile: &compute.StorageProfileArgs{
-		// 		ImageReference: &compute.ImageReferenceArgs{
-		// 			Publisher: pulumi.String("MicrosoftWindowsServer"),
-		// 			Offer:     pulumi.String("WindowsServer"),
-		// 			Sku:       pulumi.String("2019-Datacenter"),
-		// 			Version:   pulumi.String("latest"),
-		// 		},
-		// 		OsDisk: &compute.OSDiskArgs{
-		// 			CreateOption: pulumi.String("FromImage"),
-		// 		},
-		// 	},
-		// })
+
+		// winPubIpAddress := winAddress.ApplyT(func(addr network.LookupPublicIPAddressResult) (string, error) {
+		// 	return *addr.IpAddress, nil
+		// }).(pulumi.StringOutput)
+		// ctx.Export("winIp", winPubIpAddress)
+
+		winInstallSsh, err := compute.NewVirtualMachineExtension(ctx, "windowsOpenSSH", &compute.VirtualMachineExtensionArgs{
+			ResourceGroupName:  rGroup.Name,
+			VmName:             winVm.Name,
+			Type:               pulumi.String("WindowsOpenSSH"),
+			Publisher:          pulumi.String("Microsoft.Azure.OpenSSH"),
+			TypeHandlerVersion: pulumi.String("3.0"),
+		})
+		if err != nil {
+			return err
+		}
+
+    // Distribute public SSH key to Windows Server
+  //   winDistPubSshKey, err := compute.NewVirtualMachineRunCommandByVirtualMachine(ctx, "distributePublicKeyToWindows", &compute.VirtualMachineRunCommandByVirtualMachineArgs{
+  //     ResourceGroupName: rGroup.Name,
+  //     VmName: winVm.Name,
+  //     Location: winVm.Location,
+  //     Source: &compute.VirtualMachineRunCommandScriptSourceArgs{
+  //       Script: pulumi.Sprintf(`powershell -command '$username = '%s'; $homeDirectoryPath = "C:\Users\$username"; New-Item -ItemType Directory -Force "C:\Users\$username\.ssh"; Set-Content -Path "C:\Users\$username\.ssh\authorized_keys" -Value '%s'; $acl = Get-Acl "$homeDirectoryPath"; $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule("$username", "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow"); $acl.SetAccessRule($accessRule); Set-Acl -Path "$homeDirectoryPath" -AclObject "$acl"'`,
+		// 			adminUsername,
+		// 			sshPubKey),
+  //     },
+		// }, pulumi.DependsOn([]pulumi.Resource{
+  //     winInstallSsh,
+		// }))
 		// if err != nil {
 		// 	return err
 		// }
@@ -413,10 +497,10 @@ func main() {
 		ctx.Export("privateKeyPath", pulumi.String(sshKeyPath))
 
 		// Generate Ansible inventory
-		ansibleDir := pulumi.All(pulumi.String(linuxVmName)).ApplyT(func(args []interface{}) (string, error) {
+		ansibleDir := pulumi.All(linuxVmName, windowsVmName).ApplyT(func(args []interface{}) (string, error) {
 			conf := AnsibleConfiguration{
-				Linux: args[0].(string),
-				// Windows: args[1].(string),
+				Linux:   args[0].(string),
+				Windows: args[1].(string),
 			}
 
 			dir, err := GenerateConfiguration(conf)
@@ -442,6 +526,7 @@ func main() {
 				"RAFAEL_CONTROLLER_HOSTNAME": linuxPubIpAddress,
 			},
 		}, pulumi.DependsOn([]pulumi.Resource{
+      winInstallSsh,
 			linuxVm,
 		}))
 		if err != nil {
@@ -449,7 +534,7 @@ func main() {
 		}
 
 		// Run Ansible directory
-		distAnsibleDir, err := local.NewCommand(ctx, "distributeAnsibleDirToController", &local.CommandArgs{
+		distAnsible, err := local.NewCommand(ctx, "distributeAnsibleToController", &local.CommandArgs{
 			Create: pulumi.String(fmt.Sprintf("scp -o StrictHostKeyChecking=no " +
 				"-o ConnectionAttempts=30 " +
 				"-o ConnectTimeout=10 " +
@@ -479,20 +564,23 @@ func main() {
 					return &s
 				}).(pulumi.StringPtrOutput),
 			},
-			Create: pulumi.All(splunkSecret, linuxVmName).ApplyT(func(args []interface{}) *string {
-        command := "sudo usermod -aG docker $USER; " +
-				"until command -v ansible-playbook >& /dev/null; do sleep 5; done; " +
-        "cd \"$HOME/ansible\" || exit 1; " +
-				"ansible-playbook \"$HOME/ansible/deploy.yml\" " +
-				"-i $HOME/ansible/inventory.yml -u $USER " +
-        fmt.Sprintf("-e \"splunk_password=%s\" ", args[0].(string)) +
-        fmt.Sprintf("-e \"splunk_service=%s\" ", args[1].(string)) +
-        fmt.Sprintf("-e \"syslog_service=%s\" ", args[1].(string))
-        return &command
-      }).(pulumi.StringPtrOutput),
+			Create: pulumi.All(linuxVmName, linuxPubFqdn, winSecret, pfxSecret, splunkSecret).ApplyT(func(args []interface{}) *string {
+				command := "sudo usermod -aG docker $USER; " +
+					"until command -v ansible-playbook >& /dev/null; do sleep 5; done; " +
+					"cd \"$HOME/ansible\" || exit 1; " +
+					"ansible-galaxy install -g -f -r \"$HOME/ansible/requirements.yml\"; " +
+					"ansible-playbook \"$HOME/ansible/deploy.yml\" " +
+					"-i $HOME/ansible/inventory.yml -u $USER " +
+					fmt.Sprintf("-e 'linux_host=%s' ", args[0].(string)) +
+					fmt.Sprintf("-e 'linux_fqdn=%s' ", args[1].(string)) +
+					fmt.Sprintf("-e 'ansible_password=%s' ", args[2].(string)) +
+					fmt.Sprintf("-e 'pfx_password=%s' ", args[3].(string)) +
+					fmt.Sprintf("-e 'splunk_password=%s' ", args[4].(string))
+				return &command
+			}).(pulumi.StringPtrOutput),
 			Triggers: pulumi.Array{pulumi.String(time.Now().Format(time.Now().Format(time.RFC3339)))},
 		}, pulumi.DependsOn([]pulumi.Resource{
-			distAnsibleDir,
+			distAnsible,
 		}))
 		if err != nil {
 			return err

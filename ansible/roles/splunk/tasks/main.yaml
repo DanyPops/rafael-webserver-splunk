@@ -1,4 +1,43 @@
 ---
+- name: "[SPLUNK] Creating configuration directory"
+  ansible.builtin.file: 
+    state: directory
+    path: /splunk/conf
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+  become: true
+
+- name: "[SPLUNK] Copying configuration"
+  ansible.builtin.copy:
+    src: default.yml
+    dest: /splunk/conf/default.yml
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+  become: true
+
+- name: "[SPLUNK] Creating certificates directory"
+  ansible.builtin.file:
+    state: directory
+    path: /splunk/certs
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+  become: true
+
+- name: "[SPLUNK] Extract Certificate from PFX"
+  command: |
+    openssl pkcs12 -in /home/{{ ansible_user }}/splunk.pfx -nokeys -out /splunk/certs/web.crt.pem -passin pass:{{ pfx_password }}
+  args:
+    creates: /splunk/certs/web.crt.pem
+
+- name: "[SPLUNK] Extract Private Key from PFX"
+  command: |
+    openssl pkcs12 -in /home/{{ ansible_user }}/splunk.pfx -nocerts -nodes -out /splunk/certs/web.key.pem -passin pass:{{ pfx_password }}
+  args:
+    creates: /splunk/certs/web.key.pem
+
 - name: "[SPLUNK] Pulling container image"
   community.docker.docker_image:
     name: splunk/splunk
@@ -6,7 +45,7 @@
 
 - name: "[SPLUNK] Starting container"
   community.docker.docker_container:
-    name: analytics
+    name: splunk
     image: splunk/splunk:latest
     state: started
     recreate: true
@@ -18,11 +57,21 @@
     env:
       SPLUNK_START_ARGS: "--accept-license"
       SPLUNK_PASSWORD: "{{ splunk_password }}"
-  no_log: true
+    mounts:
+      - type: "bind"
+        source: "/splunk/conf/default.yml"
+        target: "/tmp/defaults/default.yml"
+      - type: "bind"
+        source: "/splunk/certs/web.crt.pem"
+        target: "/opt/splunk/etc/auth/mycerts/web.crt.pem"
+      - type: "bind"
+        source: "/splunk/certs/web.key.pem"
+        target: "/opt/splunk/etc/auth/mycerts/web.key.pem"
+  # no_log: true
 
 - name: "[SPLUNK] Waiting for API to respond"
   uri:
-    url: "https://{{ splunk_service }}:8089"
+    url: "https://rafael-linux:8089"
     return_content: yes
     validate_certs: no
   until: splunk_api_ready.status == 200
@@ -32,7 +81,7 @@
 
 - name: "[SPLUNK] Authenticate"
   uri:
-    url: "https://{{ splunk_service }}:8089/services/auth/login"
+    url: "https://rafael-linux:8089/services/auth/login"
     method: POST
     user: admin
     password: "{{ splunk_password }}"
@@ -50,7 +99,7 @@
 
 - name: "[SPLUNK] Create HEC input token for webserver"
   uri:
-    url: "https://{{ splunk_service }}:8089/services/data/inputs/http"
+    url: "https://rafael-linux:8089/services/data/inputs/http"
     method: POST
     headers:
       Authorization: Splunk {{ splunk_auth.json.sessionKey }}

@@ -1,0 +1,5 @@
+---
+splunk:
+  http_enableSSL: 1
+  http_enableSSL_cert: /opt/splunk/etc/auth/mycerts/web.crt.pem
+  http_enableSSL_privKey: /opt/splunk/etc/auth/mycerts/web.key.pem

@@ -1,21 +1,61 @@
 ---
 - name: "[CS] Install Certificate Services feature"
   win_feature:
-    name: ADCS-Cert-Authority
-    state: present
+   name: ADCS-Cert-Authority
+   state: present
+
+- name: "[CS] Check if Certificate Services is already installed"
+  win_stat:
+    path: 'C:\\Windows\\System32\\CertSrv'
+  register: ca_installed
 
 - name: "[CS] Configure Certificate Services"
+  win_shell: >
+   Install-AdcsCertificationAuthority
+   -CAType EnterpriseRootCA
+   -HashAlgorithmName SHA256
+   -KeyLength 2048
+   -CACommonName "RafaelCA"
+   -ValidityPeriod Years
+   -ValidityPeriodUnits 5
+   -Force
+  when: not ca_installed.stat.exists
+
+- name: "[CS] Generate a PFX Certificate"
   win_shell: |
-    Install-AdcsCertificationAuthority -CAType StandaloneRootCA -CACommonName "RafaelCA" -KeyLength 2048 -HashAlgorithmName SHA256
+    $ErrorActionPreference = "Stop"
+    
+    Install-PackageProvider NuGet -Force
+    Set-PSRepository PSGallery -InstallationPolicy Trusted
+    Install-Module PSCertificateEnrollment -Repository PSGallery -Force
+    Import-Module PSCertificateEnrollment
 
-- name: "[CS] Create a self-signed certificate"
-  win_pfx_certificate:
-    path: C:\Certs\rafael-linux.pfx
-    subject: "CN={{ linux_public_fqdn }}"
-    password: 
+    $req = New-CertificateRequest `
+      -Eku ServerAuthentication `
+      -Subject "CN={{ linux_fqdn }}" `
+      -Dns {{ linux_fqdn }} `
+      -Exportable
 
-- name: "[CS] Copy certificate"
-  win_copy:
-    src: C:\Certs\rafael-linux.pfx
-    dest: /path/to/local/directory/
-  delegate_to: localhost
+    $resp = $req | Get-IssuedCertificate `
+      -ConfigString "rafael-windows.ad.rafael.local\RafaelCA" `
+      -CertificateTemplate "WebServer"
+
+    $resp.Certificate | Install-IssuedCertificate
+
+    $password = ConvertTo-SecureString -String "{{ pfx_password }}" -Force -AsPlainText
+
+    Export-PfxCertificate `
+      -Cert "Cert:\CurrentUser\My\$($resp.Certificate.Thumbprint)" `
+      -FilePath "C:\Users\{{ ansible_user }}\splunk.pfx" `
+      -Password $password
+
+  args:
+    creates: "C:/Users/{{ ansible_user }}/splunk.pfx"
+
+- name: "[CS] Fetch PFX Certificate"
+  fetch:
+    src: "C:/Users/{{ ansible_user }}/splunk.pfx"
+    dest: "/home/rafael/"
+    flat: True
+  args:
+    creates: "/home/rafael/splunk.pfx"

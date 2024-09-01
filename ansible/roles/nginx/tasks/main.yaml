@@ -1,44 +1,38 @@
 ---
-# - name: "[NGINX] Creating service user"
-#   ansible.builtin.user:
-#     name: webserver
-#     shell: /bin/false
-#   become: true
-
 - name: "[NGINX] Creating conf directory"
   ansible.builtin.file:
     state: directory
-    path: /www/conf
-    owner: rafael
-    group: rafael
-    mode: '0644'
+    path: /nginx/conf
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
   become: true
 
 - name: "[NGINX] Generate configuration"
   ansible.builtin.template:
     src: nginx.conf.j2 
-    dest: /www/conf/nginx.conf
-    owner: rafael
-    group: rafael
-    mode: '0644'
+    dest: /nginx/conf/nginx.conf
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
   become: true
 
 - name: "[NGINX] Creating data directory"
   ansible.builtin.file:
     state: directory
-    path: /www/data
-    owner: rafael
-    group: rafael
-    mode: '0644'
+    path: /nginx/data
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
   become: true
 
-- name: "[NGINX] Copy static contect"
+- name: "[NGINX] Copying static contect"
   ansible.builtin.copy:
     src: index.html
-    dest: /www/data/index.html
-    owner: rafael
-    group: rafael
-    mode: '0644'
+    dest: /nginx/data/index.html
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
   become: true
 
 - name: "[NGINX] Pulling container image"
@@ -48,8 +42,7 @@
 
 - name: "[NGINX] Starting container"
   community.docker.docker_container:
-    # user: webserver
-    name: webserver
+    name: nginx
     image: nginx:latest
     state: started
     recreate: true
@@ -58,8 +51,8 @@
       - "80:80"
     mounts:
       - type: "bind"
-        source: "/www/data/index.html"
+        source: "/nginx/data/index.html"
         target: "/usr/share/nginx/html/index.html"
       - type: "bind"
-        source: "/www/conf/nginx.conf"
+        source: "/nginx/conf/nginx.conf"
         target: "/etc/nginx/nginx.conf"
