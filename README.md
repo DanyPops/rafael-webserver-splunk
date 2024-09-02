@@ -7,7 +7,7 @@ Login to Azure via CLI - https://learn.microsoft.com/en-us/cli/azure/authenticat
 Install Go - https://go.dev/doc/install
 ## Pulumi
 Install Pulumi - https://www.pulumi.com/docs/install
-# Usuage
+# Usage
 ## Deployment
 ./deploy
 ## Teardown
